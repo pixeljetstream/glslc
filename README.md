@@ -11,24 +11,23 @@ Creates a dummy window and evokes the GL driver for compiling.
 Requires moderately new drivers, GL_ARB_separate_shader_objects
 Can dump pseudo assembly files for NVIDIA
 
-Usage:
+Usage
+-----
 
 glslc [options] *filename*
 
-Mandatory options:
+### Mandatory options
 
-  -profile *profilename*
+-profile *profilename*
 
-       Profilename can be: vertex, fragment, geometry,
-       tessevaluation, tesscontrol, compute
+> Profilename can be: vertex, fragment, geometry, tessevaluation, tesscontrol, compute
 
-Other options:
+### Other options:
 
-  -o *outputfilename*
+-o *outputfilename*
 
-       NVIDIA drivers can output pseudo assembly based on NV_program
+> NVIDIA drivers can output pseudo assembly based on NV_program
 
-  -D*MACRO[=VALUE]*
+-DMACRO[=VALUE]
   
-       Prepends '#define MACRO VALUE' to shader.
-       If VALUE is not specified it defaults to 1.
+> Prepends '#define MACRO VALUE' to shader. If VALUE is not specified it defaults to 1.
