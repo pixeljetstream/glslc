@@ -13,14 +13,22 @@ Can dump pseudo assembly files for NVIDIA
 
 Usage:
 
-glslc [options] filename
-Mandatory Options:
-  -profile profilename
-       profilename can be: vertex, fragment, geometry,
+glslc [options] *filename*
+
+Mandatory options:
+
+  -profile *profilename*
+
+       Profilename can be: vertex, fragment, geometry,
        tessevaluation, tesscontrol, compute
-Other:
-  -o outputfilename
+
+Other options:
+
+  -o *outputfilename*
+
        NVIDIA drivers can output pseudo assembly based on NV_program
-  -DMACRO[=VALUE]
-       prepends '#define MACRO VALUE' to shader
+
+  -D*MACRO[=VALUE]*
+  
+       Prepends '#define MACRO VALUE' to shader.
        If VALUE is not specified it defaults to 1.
