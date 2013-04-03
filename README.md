@@ -8,7 +8,6 @@ http://github.com/CrazyButcher/glslc
 
 Basic offline compiler for GLSL
 Creates a dummy window and evokes the GL driver for compiling.
-Requires moderately new drivers, GL_ARB_separate_shader_objects
 Can dump pseudo assembly files for NVIDIA
 
 Usage
@@ -24,9 +23,13 @@ glslc [options] *filename*
 
 ### Other options:
 
+-notseparable
+
+> Will not mark the program separable (default is false if GL_ARB_separate_shader_objects is supported) prior attaching and linking.
+
 -o *outputfilename*
 
-> NVIDIA drivers can output pseudo assembly based on NV_program
+> NVIDIA drivers can output pseudo assembly file based on NV_program
 
 -DMACRO[=VALUE]
   

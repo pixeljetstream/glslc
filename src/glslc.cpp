@@ -105,6 +105,8 @@ PFNGLGETSHADERIVPROC PFNGLGETSHADERIVPROCvar;
 PFNGLGETPROGRAMINFOLOGPROC PFNGLGETPROGRAMINFOLOGPROCvar;
 PFNGLGETSHADERINFOLOGPROC PFNGLGETSHADERINFOLOGPROCvar;
 
+int SUPPORTSSEPARATESHADERS = 0;
+
 
 void glGetProgramBinary(GLuint program, GLsizei bufSize, GLsizei *length, GLenum *binaryFormat, GLvoid *binary){
   PFNGLGETPROGRAMBINARYPROCvar(program,bufSize,length,binaryFormat,binary);
@@ -254,11 +256,9 @@ bool createContext()
 
   // optional
   INIT_GL_FUNC(PFNGLGETPROGRAMBINARYPROC,"glGetProgramBinary");
-
+  SUPPORTSSEPARATESHADERS = strstr((const char*)glGetString(GL_EXTENSIONS),"GL_ARB_separate_shader_objects") != NULL;
 
   // mandatory
-  notfound = strstr((const char*)glGetString(GL_EXTENSIONS),"GL_ARB_separate_shader_objects") == NULL;
-
   INIT_GL_FUNC(PFNGLPROGRAMPARAMETERIPROC,"glProgramParameteri");
 
   INIT_GL_FUNC(PFNGLCREATEPROGRAMPROC,"glCreateProgram");
@@ -324,6 +324,7 @@ int main(int argc, char **argv)
   const char* filename = NULL;
   const char* outfilename = NULL;
   std::vector<std::string>  defines;
+  bool allowSeparate = true;
 
   for (int i = 1; i < argc; i++){
     if ( strcmp(argv[i],"-profile")==0 && i + 1 < argc) {
@@ -352,6 +353,9 @@ int main(int argc, char **argv)
       }
       i++;
     }
+    else if (strcmp(argv[i],"-notseparable") == 0){
+      allowSeparate = false;
+    }
     else if (strstr(argv[i],"-D") == argv[i]){
       std::string def(argv[i]+2);
       if (def.find('=') != std::string::npos){
@@ -379,8 +383,7 @@ int main(int argc, char **argv)
     printf("http://github.com/CrazyButcher/glslc\n");
     printf("\n");
     printf("Basic offline compiler for GLSL\n");
-	printf("Creates a dummy window and evokes the GL driver for compiling.\n");
-    printf("Requires moderately new drivers, GL_ARB_separate_shader_objects\n");
+    printf("Creates a dummy window and evokes the GL driver for compiling.\n");
     printf("Can dump pseudo assembly files for NVIDIA\n");
     printf("\n");
     printf("Usage:\n");
@@ -391,6 +394,8 @@ int main(int argc, char **argv)
     printf("       profilename can be: vertex, fragment, geometry,\n");
     printf("       tessevaluation, tesscontrol, compute\n");
     printf("Other:\n");
+    printf("  -notseparable\n");
+    printf("       disables separate shader objects usage (default false)\n");
     printf("  -o outputfilename\n");
     printf("       NVIDIA drivers can output pseudo assembly based on NV_program\n");
     printf("  -DMACRO[=VALUE]\n");
@@ -446,7 +451,9 @@ int main(int argc, char **argv)
   MGLERROR error;
 
   GLuint program = glCreateProgram();
-  glProgramParameteri(program,GL_PROGRAM_SEPARABLE,GL_TRUE);
+  if (allowSeparate && SUPPORTSSEPARATESHADERS) {
+    glProgramParameteri(program,GL_PROGRAM_SEPARABLE,GL_TRUE);
+  }
   if (PFNGLGETPROGRAMBINARYPROCvar){
     glProgramParameteri(program,GL_PROGRAM_BINARY_RETRIEVABLE_HINT,GL_TRUE);
   }
@@ -458,7 +465,7 @@ int main(int argc, char **argv)
 
   std::string alldefines("");
 
-  printf("\n",profilename);
+  printf("\n");
   for (size_t i = 0; i < defines.size(); i++){
     printf(defines[i].c_str());
     alldefines += defines[i];
@@ -506,9 +513,9 @@ int main(int argc, char **argv)
     if (!status) return 1;
   }
 
-  printf("success\n",filename);
+  printf("successfully compiled & linked\n",filename);
 
-  if (PFNGLGETPROGRAMBINARYPROCvar){
+  if (PFNGLGETPROGRAMBINARYPROCvar && outfilename && strstr((const char*)glGetString(GL_VENDOR), "NVIDIA")){
     GLsizei binaryLength = 0;
     GLenum format = 0;
     glGetProgramiv(program, GL_PROGRAM_BINARY_LENGTH,&binaryLength);
@@ -519,25 +526,17 @@ int main(int argc, char **argv)
     const char* nvasm = pos != std::string::npos ? &binary[pos] : NULL;
     
     if (nvasm){
-      FILE* outfile = stdout;
+      FILE* outfile = fopen(outfilename,"wb");
 
-      if (outfilename){
-        outfile = fopen(outfilename,"wb");
-        if (!outfile){
-          fprintf(stderr,"error: could not create output file, \"%s\"\n",outfilename);
-          exit(1);
-        }
-      }
-      else{
-        fprintf(outfile,"\n");
+      if (!outfile){
+        fprintf(stderr,"error: could not create output file, \"%s\"\n",outfilename);
+        exit(1);
       }
 
       fprintf(outfile,nvasm);
 
-      if (outfile != stdout){
-        printf("NV_program written to \"%s\"\n",outfilename);
-        fclose(outfile);
-      }
+      printf("NV_program written to:\n%s\n",outfilename);
+      fclose(outfile);
     }
   }
 
