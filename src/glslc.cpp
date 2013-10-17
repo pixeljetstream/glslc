@@ -36,7 +36,9 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #if defined(_WIN32) && !defined(APIENTRY) && !defined(__CYGWIN__) && !defined(__SCITECH_SNAP__)
 #define WIN32_LEAN_AND_MEAN 1
+#include <direct.h>
 #include <windows.h>
+#include <io.h>
 #endif
 
 #ifndef APIENTRY
@@ -72,6 +74,10 @@ typedef char GLchar;
 #define GL_TESS_CONTROL_SHADER            0x8E88
 #define GL_COMPUTE_SHADER                 0x91B9
 
+#define GL_SHADER_INCLUDE_ARB             0x8DAE
+#define GL_NAMED_STRING_LENGTH_ARB        0x8DE9
+#define GL_NAMED_STRING_TYPE_ARB          0x8DEA
+
 typedef void (APIENTRYP PFNGLGETPROGRAMBINARYPROC) (GLuint program, GLsizei bufSize, GLsizei *length, GLenum *binaryFormat, GLvoid *binary);
 typedef void (APIENTRYP PFNGLPROGRAMPARAMETERIPROC) (GLuint program, GLenum pname, GLint value);
 
@@ -87,6 +93,13 @@ typedef void (APIENTRYP PFNGLGETPROGRAMIVPROC) (GLuint program, GLenum pname, GL
 typedef void (APIENTRYP PFNGLGETPROGRAMINFOLOGPROC) (GLuint program, GLsizei bufSize, GLsizei *length, GLchar *infoLog);
 typedef void (APIENTRYP PFNGLGETSHADERIVPROC) (GLuint shader, GLenum pname, GLint *params);
 typedef void (APIENTRYP PFNGLGETSHADERINFOLOGPROC) (GLuint shader, GLsizei bufSize, GLsizei *length, GLchar *infoLog);
+
+typedef void (APIENTRYP PFNGLCOMPILESHADERINCLUDEARBPROC) (GLuint shader, GLsizei count, const GLchar* const *path, const GLint *length);
+typedef void (APIENTRYP PFNGLDELETENAMEDSTRINGARBPROC) (GLint namelen, const GLchar* name);
+typedef void (APIENTRYP PFNGLGETNAMEDSTRINGARBPROC) (GLint namelen, const GLchar* name, GLsizei bufSize, GLint *stringlen, GLchar *string);
+typedef void (APIENTRYP PFNGLGETNAMEDSTRINGIVARBPROC) (GLint namelen, const GLchar* name, GLenum pname, GLint *params);
+typedef GLboolean (APIENTRYP PFNGLISNAMEDSTRINGARBPROC) (GLint namelen, const GLchar* name);
+typedef void (APIENTRYP PFNGLNAMEDSTRINGARBPROC) (GLenum type, GLint namelen, const GLchar* name, GLint stringlen, const GLchar *string);
 
 
 PFNGLGETPROGRAMBINARYPROC PFNGLGETPROGRAMBINARYPROCvar;
@@ -105,8 +118,15 @@ PFNGLGETSHADERIVPROC PFNGLGETSHADERIVPROCvar;
 PFNGLGETPROGRAMINFOLOGPROC PFNGLGETPROGRAMINFOLOGPROCvar;
 PFNGLGETSHADERINFOLOGPROC PFNGLGETSHADERINFOLOGPROCvar;
 
-int SUPPORTSSEPARATESHADERS = 0;
+PFNGLCOMPILESHADERINCLUDEARBPROC PFNGLCOMPILESHADERINCLUDEARBPROCvar;
+PFNGLDELETENAMEDSTRINGARBPROC PFNGLDELETENAMEDSTRINGARBPROCvar;
+PFNGLGETNAMEDSTRINGARBPROC PFNGLGETNAMEDSTRINGARBPROCvar;
+PFNGLGETNAMEDSTRINGIVARBPROC PFNGLGETNAMEDSTRINGIVARBPROCvar;
+PFNGLISNAMEDSTRINGARBPROC PFNGLISNAMEDSTRINGARBPROCvar;
+PFNGLNAMEDSTRINGARBPROC PFNGLNAMEDSTRINGARBPROCvar;
 
+int SUPPORTS_SEPARATESHADERS = 0;
+int SUPPORTS_SHADERINCLUDE = 0;
 
 void glGetProgramBinary(GLuint program, GLsizei bufSize, GLsizei *length, GLenum *binaryFormat, GLvoid *binary){
   PFNGLGETPROGRAMBINARYPROCvar(program,bufSize,length,binaryFormat,binary);
@@ -164,6 +184,30 @@ void glGetShaderInfoLog(GLuint shader, GLsizei bufSize, GLsizei *length, GLchar 
   PFNGLGETSHADERINFOLOGPROCvar(shader,bufSize,length,infoLog);
 }
 
+void glCompileShaderIncludeARB(GLuint shader,GLsizei count,const GLchar* const *path,const GLint *length){
+  PFNGLCOMPILESHADERINCLUDEARBPROCvar(shader,count,path,length);
+}
+
+void glDeleteNamedStringARB(GLint namelen,const GLchar* name){
+  PFNGLDELETENAMEDSTRINGARBPROCvar(namelen,name);
+}
+
+void glGetNamedStringARB(GLint namelen,const GLchar* name,GLsizei bufSize,GLint *stringlen,GLchar *string){
+  PFNGLGETNAMEDSTRINGARBPROCvar(namelen,name,bufSize,stringlen,string);
+}
+
+void glGetNamedStringivARB(GLint namelen,const GLchar* name,GLenum pname,GLint *params){
+  PFNGLGETNAMEDSTRINGIVARBPROCvar(namelen,name,pname,params);
+}
+
+GLboolean glIsNamedStringARB(GLint namelen,const GLchar* name){
+  return PFNGLISNAMEDSTRINGARBPROCvar(namelen,name);
+}
+
+void glNamedStringARB(GLenum type,GLint namelen,const GLchar* name,GLint stringlen,const GLchar *string){
+  PFNGLNAMEDSTRINGARBPROCvar(type,namelen,name,stringlen,string);
+}
+
 
 enum MGLERROR {
   MGL_NO_ERROR                       = 0,
@@ -174,6 +218,31 @@ enum MGLERROR {
   MGL_STACK_UNDERFLOW                = 0x0504,
   MGL_OUT_OF_MEMORY                  = 0x0505,
 };
+
+
+std::string readFile(const char* filename){
+  std::string content;
+
+  size_t filesize;
+  FILE* infile = fopen(filename,"rb");
+
+  if (!infile){
+    fprintf(stderr,"error: could not open input file \"%s\"\n",filename);
+    exit(1);
+  }
+
+  fseek (infile, 0, SEEK_END);   // non-portable
+  filesize=ftell (infile);
+  fseek (infile, 0, SEEK_SET);
+
+  content.resize(filesize+1);
+  fread(&content[0],filesize,1,infile);
+  content[filesize] = 0;
+
+  fclose (infile);
+
+  return content;
+}
 
 #ifdef _WIN32
 
@@ -256,7 +325,8 @@ bool createContext()
 
   // optional
   INIT_GL_FUNC(PFNGLGETPROGRAMBINARYPROC,"glGetProgramBinary");
-  SUPPORTSSEPARATESHADERS = strstr((const char*)glGetString(GL_EXTENSIONS),"GL_ARB_separate_shader_objects") != NULL;
+  SUPPORTS_SEPARATESHADERS = strstr((const char*)glGetString(GL_EXTENSIONS),"GL_ARB_separate_shader_objects") != NULL;
+  SUPPORTS_SHADERINCLUDE = strstr((const char*)glGetString(GL_EXTENSIONS),"GL_ARB_shading_language_include") != NULL;
 
   // mandatory
   INIT_GL_FUNC(PFNGLPROGRAMPARAMETERIPROC,"glProgramParameteri");
@@ -274,10 +344,38 @@ bool createContext()
   INIT_GL_FUNC(PFNGLGETPROGRAMINFOLOGPROC,"glGetProgramInfoLog");
   INIT_GL_FUNC(PFNGLGETSHADERINFOLOGPROC,"glGetShaderInfoLog");
 
+  INIT_GL_FUNC(PFNGLCOMPILESHADERINCLUDEARBPROC,"glCompileShaderIncludeARB");
+  INIT_GL_FUNC(PFNGLDELETENAMEDSTRINGARBPROC,"glDeleteNamedStringARB");
+  INIT_GL_FUNC(PFNGLGETNAMEDSTRINGARBPROC,"glGetNamedStringARB");
+  INIT_GL_FUNC(PFNGLGETNAMEDSTRINGIVARBPROC,"glGetNamedStringivARB");
+  INIT_GL_FUNC(PFNGLISNAMEDSTRINGARBPROC,"glIsNamedStringARB");
+  INIT_GL_FUNC(PFNGLNAMEDSTRINGARBPROC,"glNamedStringARB");
 
   MGLERROR error = (MGLERROR)glGetError();
 
   return error != MGL_NO_ERROR || notfound;
+}
+
+void handleInclude(std::string pattern)
+{
+  struct _finddata_t c_file;
+  intptr_t hFile;
+  std::string path;
+  size_t pos = pattern.find_last_of('/');
+  if (pos != std::string::npos){
+    path = pattern.substr(0,pos+1);
+  }
+
+  if ((hFile = _findfirst (pattern.c_str(), &c_file)) == -1L) {
+    return;
+  }
+
+  do {
+    std::string filepath = (path + std::string(c_file.name));
+    std::string content = readFile(filepath.c_str() );
+    glNamedStringARB(GL_SHADER_INCLUDE_ARB, -1, (std::string("/") + filepath).c_str(), -1, content.c_str()) ;
+  } while(_findnext (hFile, &c_file) != -1L);
+  _findclose (hFile);
 }
 
 
@@ -292,6 +390,8 @@ void printCorrectedLog(std::string &log, const char *filename, size_t defines)
 
   std::string output = std::tr1::regex_replace( log, pattern, std::string(filename) + std::string("$1"));
 
+#if 0
+  // handled via #pragma line 0 now
   if (defines){
     // evil hackery
     char* cur = &output[0];
@@ -313,8 +413,10 @@ void printCorrectedLog(std::string &log, const char *filename, size_t defines)
       cur = strstr(cur+1,") : ");
     }
   }
+#endif
   printf(output.c_str());
 }
+
 
 
 int main(int argc, char **argv)
@@ -324,6 +426,7 @@ int main(int argc, char **argv)
   const char* filename = NULL;
   const char* outfilename = NULL;
   std::vector<std::string>  defines;
+  std::vector<std::string>  includes;
   bool allowSeparate = true;
 
   for (int i = 1; i < argc; i++){
@@ -367,6 +470,10 @@ int main(int argc, char **argv)
 
       defines.push_back(std::string("#define ") + def + "\n");
     }
+    else if (strstr(argv[i],"-I") == argv[i]){
+      std::string pattern(argv[i]+2);
+      includes.push_back(pattern);
+    }
     else if (strcmp(argv[i],"-o")==0 && i + 1 < argc){
       outfilename = argv[i+1];
       i++;
@@ -401,6 +508,9 @@ int main(int argc, char **argv)
     printf("  -DMACRO[=VALUE]\n");
     printf("       prepends '#define MACRO VALUE' to shader\n");
     printf("       If VALUE is not specified it defaults to 1.\n");
+    printf("  -IPATTERN\n");
+    printf("       uses PATTERN to find files for includes\n");
+    printf("       requires GL_ARB_shading_language_include\n");
     printf("\n");
     return 0;
   }
@@ -419,27 +529,11 @@ int main(int argc, char **argv)
     exit(1);
   }
   else{
-    size_t filesize;
-    FILE* infile = fopen(filename,"rb");
-
-    if (!infile){
-      fprintf(stderr,"error: could not open input file \"%s\"\n",filename);
-      exit(1);
-    }
-
-    fseek (infile, 0, SEEK_END);   // non-portable
-    filesize=ftell (infile);
-    fseek (infile, 0, SEEK_SET);
-
-    shadertext.resize(filesize+1);
-    fread(&shadertext[0],filesize,1,infile);
-    shadertext[filesize] = 0;
-
-    fclose (infile);
+    shadertext = readFile(filename);
   }
 
   if (createContext()){
-    fprintf(stderr,"could not create GL context with required extensions: GL_ARB_get_program_binary, GL_ARB_separate_shader_objects\n");
+    fprintf(stderr,"could not create GL context\n");
     exit(1);
   }
 
@@ -451,13 +545,21 @@ int main(int argc, char **argv)
   MGLERROR error;
 
   GLuint program = glCreateProgram();
-  if (allowSeparate && SUPPORTSSEPARATESHADERS) {
+  if (allowSeparate && SUPPORTS_SEPARATESHADERS) {
     glProgramParameteri(program,GL_PROGRAM_SEPARABLE,GL_TRUE);
   }
   if (PFNGLGETPROGRAMBINARYPROCvar){
     glProgramParameteri(program,GL_PROGRAM_BINARY_RETRIEVABLE_HINT,GL_TRUE);
   }
   
+  if (!SUPPORTS_SHADERINCLUDE && includes.size()){
+    printf("GL_ARB_shading_language_include is not supported, includes will be ignored\n");
+  }
+  else if (includes.size()){
+    for (size_t i = 0; i < includes.size(); i++){
+      handleInclude(includes[i]);
+    }
+  }
 
   error = (MGLERROR)glGetError();
 
@@ -476,13 +578,20 @@ int main(int argc, char **argv)
   const char*  strings[1];
   GLint        lengths[1];
 
-  shadertext = alldefines + shadertext;
+  shadertext = alldefines  + std::string("#line 0\n") +  shadertext;
 
   strings[0] = shadertext.c_str();
   lengths[0] = strlen(strings[0]);
 
   glShaderSource(shader,1,strings,lengths);
-  glCompileShader(shader);
+
+  if (SUPPORTS_SHADERINCLUDE){
+    const char* paths = "/";
+    glCompileShaderIncludeARB(shader,1,&paths,NULL);
+  }
+  else{
+    glCompileShader(shader);
+  }
 
   error = (MGLERROR)glGetError();
 
