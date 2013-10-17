@@ -34,3 +34,8 @@ glslc [options] *filename*
 -DMACRO[=VALUE]
   
 > Prepends '#define MACRO VALUE' to shader. If VALUE is not specified it defaults to 1.
+
+-IPATTERN
+
+> Includes files with the given wildcard pattern (e.g. -I*.h -Icommon/*.h) for use with GL_ARB_shading_language_include
+
