@@ -25,9 +25,13 @@ glslc [options] *filename*
 ### Mandatory options
 
 -*profilename*
+
+or
+
 -profile *profilename*
 
 > Profilename can be: vertex, fragment, geometry, tessevaluation, tesscontrol, compute
+> and must be specified prior each file name.
 
 ### Other options:
 
@@ -37,7 +41,7 @@ glslc [options] *filename*
 
 -separable
 
-> Will mark the program separable (default is false if GL_ARB_separate_shader_objects is supported) prior attaching and linking.
+> Will mark the program separable (default is false) prior attaching and linking, if GL_ARB_separate_shader_objects is supported.
 
 -o *outputfilename*
 
