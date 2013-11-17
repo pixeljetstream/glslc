@@ -381,109 +381,176 @@ void handleInclude(std::string pattern)
 
 #endif
 
+void removeVersion(std::string &shader)
+{
+  std::tr1::regex pattern("#version");
 
-void printCorrectedLog(std::string &log, const char *filename, size_t defines)
+  shader = std::tr1::regex_replace( shader, pattern, std::string("//#version"));
+}
+
+void printCorrectedLog(std::string &log, const char *filename)
 {
   // 0(572) : 
+  // (0) :
 
-  std::tr1::regex pattern("0(\\(\\d+\\) : )");
+  std::tr1::regex patternLine("0(\\(\\d+\\) : )");
 
-  std::string output = std::tr1::regex_replace( log, pattern, std::string(filename) + std::string("$1"));
+  std::string output = std::tr1::regex_replace( log, patternLine, std::string(filename) + std::string("$1") );
 
-#if 0
-  // handled via #pragma line 0 now
-  if (defines){
-    // evil hackery
-    char* cur = &output[0];
-    cur = strstr(cur,") : ");
-    while (cur){
-      char *begin = cur;
-      int length = 0;
-      while (*begin != '('){
-        length++;
-        begin--;
-      }
-      begin++;
+  std::tr1::regex patternFile("\\(0\\)");
 
-      int num = atoi(begin);
-      // attach space in case string got shorter
-      _snprintf(begin,length,"%d) ",num-(int)defines);
-      //begin[length-1] = ')';
+  output = std::tr1::regex_replace( output, patternFile, std::string(filename) );
 
-      cur = strstr(cur+1,") : ");
-    }
-  }
-#endif
   printf(output.c_str());
 }
 
 
-
-int main(int argc, char **argv)
+const char* shaderTypeName(GLenum type)
 {
-  GLenum shadertype = 0;
-  const char* profilename = NULL;
-  const char* filename = NULL;
-  const char* outfilename = NULL;
-  std::vector<std::string>  defines;
-  std::vector<std::string>  includes;
-  bool allowSeparate = true;
+  switch(type){
+    case GL_VERTEX_SHADER: return "Vertex";
+    case GL_FRAGMENT_SHADER: return "Fragment";
+    case GL_GEOMETRY_SHADER: return "Geometry";
+    case GL_TESS_EVALUATION_SHADER: return "Tessellation evaluation";
+    case GL_TESS_CONTROL_SHADER: return "Tessellation control";
+    case GL_COMPUTE_SHADER: return "Compute";
+  }
+  return "";
+}
 
-  for (int i = 1; i < argc; i++){
-    if ( strcmp(argv[i],"-profile")==0 && i + 1 < argc) {
-      profilename = argv[i+1];
-      if (strcmp(argv[i+1],"vertex")==0){
-        shadertype = GL_VERTEX_SHADER;
-      }
-      else if (strcmp(argv[i+1],"fragment")==0){
-        shadertype = GL_FRAGMENT_SHADER;
-      }
-      else if (strcmp(argv[i+1],"geometry")==0){
-        shadertype = GL_GEOMETRY_SHADER;
-      }
-      else if (strcmp(argv[i+1],"tessevaluation")==0){
-        shadertype = GL_TESS_EVALUATION_SHADER;
-      }
-      else if (strcmp(argv[i+1],"tesscontrol")==0){
-        shadertype = GL_TESS_CONTROL_SHADER;
-      }
-      else if (strcmp(argv[i+1],"compute")==0){
-        shadertype = GL_COMPUTE_SHADER;
-      }
-      else {
-        fprintf(stderr,"error: illegal profile\n");
-        exit(1);
-      }
-      i++;
-    }
-    else if (strcmp(argv[i],"-notseparable") == 0){
-      allowSeparate = false;
-    }
-    else if (strstr(argv[i],"-D") == argv[i]){
-      std::string def(argv[i]+2);
-      if (def.find('=') != std::string::npos){
-        def[def.find('=')] = ' ';
-      }
-      else {
-        def += std::string(" 1");
-      }
+static const size_t INVALID = std::string::npos;
 
-      defines.push_back(std::string("#define ") + def + "\n");
-    }
-    else if (strstr(argv[i],"-I") == argv[i]){
-      std::string pattern(argv[i]+2);
-      includes.push_back(pattern);
-    }
-    else if (strcmp(argv[i],"-o")==0 && i + 1 < argc){
-      outfilename = argv[i+1];
-      i++;
-    }
-    else {
-      filename = argv[i];
+size_t findShaderLogInfo(const std::string& log, size_t offset, GLenum& type)
+{
+  GLenum types[] = {
+    GL_VERTEX_SHADER,
+    GL_FRAGMENT_SHADER,
+    GL_GEOMETRY_SHADER,
+    GL_TESS_EVALUATION_SHADER,
+    GL_TESS_CONTROL_SHADER,
+    GL_COMPUTE_SHADER
+  };
+
+  size_t pos = INVALID;
+  for (size_t i = 0; i < sizeof(types)/sizeof(types[0]); i++){
+    std::string search = std::string(shaderTypeName(types[i])) + std::string(" info");
+    size_t searchpos   = log.find(search.c_str(), offset);
+    if (searchpos < pos ){
+      type = types[i];
+      pos = searchpos;
     }
   }
 
-  if (!shadertype && !filename){
+  return pos;
+}
+
+struct ShaderInfo {
+  GLenum        type;
+  std::string   infile;
+};
+
+int main(int argc, char **argv)
+{
+  const char* outfilename   = NULL;
+  const char* versionstring = NULL;
+  std::vector<ShaderInfo>   shaders;
+  std::vector<std::string>  defines;
+  std::vector<std::string>  includes;
+  
+  
+  bool allowSeparate = false;
+
+  {
+    GLenum shadertype = 0;
+    const char* filename = NULL;
+
+    for (int i = 1; i < argc; i++){
+      if ( strcmp(argv[i],"-profile")==0 && i + 1 < argc) {
+        if (strcmp(argv[i+1],"vertex")==0){
+          shadertype = GL_VERTEX_SHADER;
+        }
+        else if (strcmp(argv[i+1],"fragment")==0){
+          shadertype = GL_FRAGMENT_SHADER;
+        }
+        else if (strcmp(argv[i+1],"geometry")==0){
+          shadertype = GL_GEOMETRY_SHADER;
+        }
+        else if (strcmp(argv[i+1],"tessevaluation")==0){
+          shadertype = GL_TESS_EVALUATION_SHADER;
+        }
+        else if (strcmp(argv[i+1],"tesscontrol")==0){
+          shadertype = GL_TESS_CONTROL_SHADER;
+        }
+        else if (strcmp(argv[i+1],"compute")==0){
+          shadertype = GL_COMPUTE_SHADER;
+        }
+        else {
+          fprintf(stderr,"error: illegal profile\n");
+          exit(1);
+        }
+        i++;
+      }
+      else if (strcmp(argv[i],"-separable") == 0){
+        allowSeparate = true;
+      }
+      else if (strcmp(argv[i],"-vertex")==0){
+        shadertype = GL_VERTEX_SHADER;
+      }
+      else if (strcmp(argv[i],"-fragment")==0){
+        shadertype = GL_FRAGMENT_SHADER;
+      }
+      else if (strcmp(argv[i],"-geometry")==0){
+        shadertype = GL_GEOMETRY_SHADER;
+      }
+      else if (strcmp(argv[i],"-tessevaluation")==0){
+        shadertype = GL_TESS_EVALUATION_SHADER;
+      }
+      else if (strcmp(argv[i],"-tesscontrol")==0){
+        shadertype = GL_TESS_CONTROL_SHADER;
+      }
+      else if (strcmp(argv[i],"-compute")==0){
+        shadertype = GL_COMPUTE_SHADER;
+      }
+      else if (strstr(argv[i],"-D") == argv[i]){
+        std::string def(argv[i]+2);
+        if (def.find('=') != std::string::npos){
+          def[def.find('=')] = ' ';
+        }
+        else {
+          def += std::string(" 1");
+        }
+
+        defines.push_back(std::string("#define ") + def + "\n");
+      }
+      else if (strstr(argv[i],"-I") == argv[i]){
+        std::string pattern(argv[i]+2);
+        includes.push_back(pattern);
+      }
+      else if (strcmp(argv[i],"-glslversion")==0 && i + 1 < argc){
+        versionstring = argv[i+1];
+        i++;
+      }
+      else if (strcmp(argv[i],"-o")==0 && i + 1 < argc){
+        outfilename = argv[i+1];
+        i++;
+      }
+      else {
+        if (!shadertype){
+          fprintf(stderr,"error: profile not provided\n");
+          exit(1);
+        }
+
+        filename = argv[i];
+        ShaderInfo info;
+        info.infile  = std::string(filename);
+        info.type    = shadertype;
+        shaders.push_back(info);
+      }
+    }
+  }
+
+
+  if (argc == 1){
     printf("glslc\n");
     printf("-----\n");
     printf("(c) 2013 Christoph Kubisch: pixeljetstream@luxinia.de\n");
@@ -497,12 +564,15 @@ int main(int argc, char **argv)
     printf("\n");
     printf("glslc [options] filename\n");
     printf("Mandatory Options:\n");
+    printf("  -profilename\n");
     printf("  -profile profilename\n");
     printf("       profilename can be: vertex, fragment, geometry,\n");
     printf("       tessevaluation, tesscontrol, compute\n");
+    printf("       and affects subsequent filenames.\n");
+    printf("       all files will be linked to a single program\n");
     printf("Other:\n");
-    printf("  -notseparable\n");
-    printf("       disables separate shader objects usage (default false)\n");
+    printf("  -separable\n");
+    printf("       enables separate shader objects usage (default false)\n");
     printf("  -o outputfilename\n");
     printf("       NVIDIA drivers can output pseudo assembly based on NV_program\n");
     printf("  -DMACRO[=VALUE]\n");
@@ -511,38 +581,31 @@ int main(int argc, char **argv)
     printf("  -IPATTERN\n");
     printf("       uses PATTERN to find files for includes\n");
     printf("       requires GL_ARB_shading_language_include\n");
+    printf("  -glslversion \"version string\"\n");
+    printf("       prepends version string prior defines, puts // in front of #version directives in shader file\n");
     printf("\n");
     return 0;
   }
 
-
-  if (!shadertype){
-    fprintf(stderr,"error: profile not provided\n");
+  if (!shaders.size()){
+    fprintf(stderr,"error: no filename(s) provided\n");
     exit(1);
   }
-
-
-  std::string shadertext;
-
-  if (!filename){
-    fprintf(stderr,"error: filename not provided\n");
-    exit(1);
-  }
-  else{
-    shadertext = readFile(filename);
-  }
-
+  
   if (createContext()){
     fprintf(stderr,"could not create GL context\n");
     exit(1);
   }
 
-  printf("glslc - %s shader\n",profilename);
+  printf("glslc\n");
   printf("GL Vendor:   %s\n",glGetString(GL_VENDOR));
   printf("GL Renderer: %s\n",glGetString(GL_RENDERER));
   printf("GL Version:  %s\n",glGetString(GL_VERSION));
 
-  MGLERROR error;
+
+  if (allowSeparate && !SUPPORTS_SEPARATESHADERS) {
+    printf("separable option not supported, disabled\n");
+  }
 
   GLuint program = glCreateProgram();
   if (allowSeparate && SUPPORTS_SEPARATESHADERS) {
@@ -550,7 +613,7 @@ int main(int argc, char **argv)
   }
   if (PFNGLGETPROGRAMBINARYPROCvar){
     glProgramParameteri(program,GL_PROGRAM_BINARY_RETRIEVABLE_HINT,GL_TRUE);
-  }
+  } 
   
   if (!SUPPORTS_SHADERINCLUDE && includes.size()){
     printf("GL_ARB_shading_language_include is not supported, includes will be ignored\n");
@@ -561,69 +624,110 @@ int main(int argc, char **argv)
     }
   }
 
-  error = (MGLERROR)glGetError();
-
-  GLuint shader = glCreateShader(shadertype);
-
-  std::string alldefines("");
-
   printf("\n");
+  std::string version("");
+  if (versionstring){
+    version = std::string("#version ") + std::string(versionstring) + std::string("\n");
+  }
+  std::string alldefines("");
   for (size_t i = 0; i < defines.size(); i++){
     printf(defines[i].c_str());
     alldefines += defines[i];
   }
-  printf("#include \"%s\"\n\n",filename);
 
+  for (size_t i = 0; i < shaders.size(); i++){
+    const ShaderInfo& info = shaders[i];
+    const char* filename   = info.infile.c_str();
+    std::string shadertext = readFile(filename);
 
-  const char*  strings[1];
-  GLint        lengths[1];
+    GLuint shader = glCreateShader(info.type);
+    printf("compiling %s:\"%s\"...\n",shaderTypeName(info.type),filename);
+ 
+    const char*  strings[1];
+    GLint        lengths[1];
 
-  shadertext = alldefines  + std::string("#line 0\n") +  shadertext;
+    if (versionstring){
+      removeVersion(shadertext);
+    }
 
-  strings[0] = shadertext.c_str();
-  lengths[0] = strlen(strings[0]);
+    shadertext = version + alldefines  + std::string("#line 0\n") + shadertext;
 
-  glShaderSource(shader,1,strings,lengths);
+    strings[0] = shadertext.c_str();
+    lengths[0] = (GLint)strlen(strings[0]);
 
-  if (SUPPORTS_SHADERINCLUDE){
-    const char* paths = "/";
-    glCompileShaderIncludeARB(shader,1,&paths,NULL);
+    glShaderSource(shader,1,strings,lengths);
+
+    if (SUPPORTS_SHADERINCLUDE){
+      const char* paths = "/";
+      glCompileShaderIncludeARB(shader,1,&paths,NULL);
+    }
+    else{
+      glCompileShader(shader);
+    }
+
+    GLint status = 0;
+    GLint logLength = 0;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
+    if (logLength > 1){
+      std::string buffer;
+      buffer.resize(logLength,0);
+      glGetShaderInfoLog(shader, logLength,NULL,&buffer[0]);
+      printCorrectedLog(buffer,filename);
+      printf("\n");
+      if (!status) return 1;
+    }
+
+    printf("success\n\n");
+    glAttachShader(program,shader);
   }
-  else{
-    glCompileShader(shader);
-  }
-
-  error = (MGLERROR)glGetError();
-
-
-  GLint status = 0;
-  GLint logLength = 0;
-  glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
-  glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
-  if (logLength > 0){
-    std::string buffer;
-    buffer.resize(logLength,0);
-    glGetShaderInfoLog(shader, logLength,NULL,&buffer[0]);
-    printCorrectedLog(buffer,filename,defines.size());
-    if (!status) return 1;
-  }
-
-  glAttachShader(program,shader);
 
   glLinkProgram(program);
 
-  glGetProgramiv(program, GL_LINK_STATUS, &status);
-  glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
-  if (logLength > 0){
-    std::string buffer;
-    buffer.resize(logLength,0);
-    glGetProgramInfoLog(program, logLength,NULL,&buffer[0]);
-    printCorrectedLog(buffer,filename,defines.size());
-    if (!status) return 1;
+  {
+    GLint status = 0;
+    GLint logLength = 0;
+
+    glGetProgramiv(program, GL_LINK_STATUS, &status);
+    glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
+    if (logLength > 1){
+      std::string buffer;
+      buffer.resize(logLength,0);
+      glGetProgramInfoLog(program, logLength,NULL,&buffer[0]);
+
+      GLenum type;
+      size_t infobegin = findShaderLogInfo(buffer,0,type);
+      size_t infoend   = INVALID;
+      if (infobegin != INVALID){
+        printf(buffer.substr(0,infobegin).c_str());
+        while (infobegin != INVALID){
+          GLenum typenext;
+          infoend = findShaderLogInfo(buffer,infobegin+1,typenext);
+          std::string sublog = buffer.substr(infobegin,infoend);
+          const char* filename = "";
+          for (size_t i = 0; i < shaders.size(); i++){
+            if (shaders[i].type == type){
+              filename = shaders[i].infile.c_str();
+            }
+          }
+
+          printCorrectedLog(sublog,filename);
+          infobegin = infoend;
+          type      = typenext;
+        }
+
+      }
+      else{
+        printf(buffer.c_str());
+      }
+      
+      printf("\n");
+      if (!status) return 1;
+    }
+
+    printf("successfully linked\n");
   }
-
-  printf("successfully compiled & linked\n",filename);
-
+  
   if (PFNGLGETPROGRAMBINARYPROCvar && outfilename && strstr((const char*)glGetString(GL_VENDOR), "NVIDIA")){
     GLsizei binaryLength = 0;
     GLenum format = 0;
@@ -631,22 +735,33 @@ int main(int argc, char **argv)
     std::string binary(size_t(binaryLength+1),0);
     glGetProgramBinary(program,binaryLength,NULL,&format,&binary[0]);
 
-    size_t pos = binary.rfind("!!NV");
-    const char* nvasm = pos != std::string::npos ? &binary[pos] : NULL;
-    
-    if (nvasm){
-      FILE* outfile = fopen(outfilename,"wb");
+    size_t startpos = binary.find("!!NV",0);
+    size_t endpos   = binary.rfind("END");
+  
+    if (startpos == INVALID || endpos == INVALID)
+      return 1;
 
-      if (!outfile){
-        fprintf(stderr,"error: could not create output file, \"%s\"\n",outfilename);
-        exit(1);
+    FILE* outfile = fopen(outfilename,"wb");
+    if (!outfile){
+      fprintf(stderr,"error: could not create output file, \"%s\"\n",outfilename);
+      return 1;
+    }
+
+    while (startpos != INVALID && endpos != INVALID){
+      size_t temppos = binary.find("!!NV", startpos+1);
+      if (temppos != INVALID){
+        endpos   = binary.rfind("END", temppos);
       }
 
-      fprintf(outfile,nvasm);
+      std::string shaderoutput = binary.substr(startpos,endpos + 3 - startpos);
+      fprintf(outfile,shaderoutput.c_str());
+      fprintf(outfile,"\n\n");
 
-      printf("NV_program written to:\n%s\n",outfilename);
-      fclose(outfile);
+      startpos = binary.find("!!NV", endpos + 3);
+      endpos   = binary.rfind("END");
     }
+    printf("NV_program written to:\n%s\n",outfilename);
+    fclose(outfile);
   }
 
   return 0;

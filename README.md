@@ -10,6 +10,13 @@ Basic offline compiler for GLSL
 Creates a dummy window and evokes the GL driver for compiling.
 Can dump pseudo assembly files for NVIDIA
 
+Examples
+--------
+
+glslc -o output.txt -I*.h -profile vertex myvertex.vs
+
+glslc -glslversion "430 core" -o output.txt -DFOO -vertex myvertex.vs -fragment myfrag.fs
+
 Usage
 -----
 
@@ -17,15 +24,20 @@ glslc [options] *filename*
 
 ### Mandatory options
 
+-*profilename*
 -profile *profilename*
 
 > Profilename can be: vertex, fragment, geometry, tessevaluation, tesscontrol, compute
 
 ### Other options:
 
--notseparable
+-glslversion "*string*"
 
-> Will not mark the program separable (default is false if GL_ARB_separate_shader_objects is supported) prior attaching and linking.
+> Prepends "#version *string*\n" prior macros and shader and puts // in front of #version find in shaderfile.
+
+-separable
+
+> Will mark the program separable (default is false if GL_ARB_separate_shader_objects is supported) prior attaching and linking.
 
 -o *outputfilename*
 
