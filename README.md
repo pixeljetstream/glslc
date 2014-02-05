@@ -4,7 +4,7 @@ glslc
 Simple GLSL compilation checker (uses display driver)
 
 (c) 2013 Christoph Kubisch: pixeljetstream@luxinia.de
-http://github.com/CrazyButcher/glslc
+http://github.com/pixeljetstream/glslc
 
 Basic offline compiler for GLSL
 Creates a dummy window and evokes the GL driver for compiling.
