@@ -6,10 +6,11 @@ Simple GLSL compilation checker (uses display driver)
 (c) 2013-2014 Christoph Kubisch: pixeljetstream@luxinia.de
 http://glslc.luxinia.de
 
-Basic offline compiler for GLSL
-Creates a dummy window and evokes the GL driver for compiling.
-Can dump pseudo assembly files for NVIDIA
-Basic #include handling independent of GL_ARB_shading_language_include support
+* Basic commandline compiler for GLSL
+* Creates an invisible dummy window and evokes the GL driver for compiling.
+* Can dump pseudo assembly files for NVIDIA
+* Basic #include handling independent of GL_ARB_shading_language_include support
+* Best used with GLSL editing capabilites of the http://www.luxinia.de/index.php/Estrela or http://studio.zerobrane.com/ IDE
 
 Examples
 --------
