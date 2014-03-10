@@ -3,17 +3,18 @@ glslc
 
 Simple GLSL compilation checker (uses display driver)
 
-(c) 2013 Christoph Kubisch: pixeljetstream@luxinia.de
-http://github.com/CrazyButcher/glslc
+(c) 2013-2014 Christoph Kubisch: pixeljetstream@luxinia.de
+http://glslc.luxinia.de
 
 Basic offline compiler for GLSL
 Creates a dummy window and evokes the GL driver for compiling.
 Can dump pseudo assembly files for NVIDIA
+Basic #include handling independent of GL_ARB_shading_language_include support
 
 Examples
 --------
 
-glslc -o output.txt -I*.h -profile vertex myvertex.vs
+glslc -o output.txt -profile vertex myvertex.vs
 
 glslc -glslversion "430 core" -o output.txt -DFOO -vertex myvertex.vs -fragment myfrag.fs
 
@@ -51,7 +52,4 @@ or
   
 > Prepends '#define MACRO VALUE' to shader. If VALUE is not specified it defaults to 1.
 
--IPATTERN
-
-> Includes files with the given wildcard pattern (e.g. -I*.h -Icommon/*.h) for use with GL_ARB_shading_language_include
 

@@ -2,8 +2,8 @@
 
 glslc
 =============================================================================
-Copyright: 2013 Christoph Kubisch. 
-http://pixeljetstream.luxinia.de
+Copyright: 2013-2014 Christoph Kubisch. 
+http://glslc.luxinia.de
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
@@ -28,11 +28,14 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
+#define GLSLC_VERSION 5
+
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
 #include <regex>
+#include <sstream>
 
 #if defined(_WIN32) && !defined(APIENTRY) && !defined(__CYGWIN__) && !defined(__SCITECH_SNAP__)
 #define WIN32_LEAN_AND_MEAN 1
@@ -235,9 +238,9 @@ std::string readFile(const char* filename){
   filesize=ftell (infile);
   fseek (infile, 0, SEEK_SET);
 
-  content.resize(filesize+1);
+  content.resize(filesize);
   fread(&content[0],filesize,1,infile);
-  content[filesize] = 0;
+  //content[filesize] = 0;
 
   fclose (infile);
 
@@ -336,7 +339,6 @@ bool createContext()
   INIT_GL_FUNC(PFNGLGETNAMEDSTRINGIVARBPROC,"glGetNamedStringivARB");
   INIT_GL_FUNC(PFNGLISNAMEDSTRINGARBPROC,"glIsNamedStringARB");
   INIT_GL_FUNC(PFNGLNAMEDSTRINGARBPROC,"glNamedStringARB");
-  
 
   // mandatory
   notfound = false;
@@ -360,41 +362,19 @@ bool createContext()
 }
 
 
-void addIncludes(std::string pattern)
-{
-  struct _finddata_t c_file;
-  intptr_t hFile;
-  std::string path;
-  size_t pos = pattern.find_last_of('/');
-  if (pos != std::string::npos){
-    path = pattern.substr(0,pos+1);
-  }
-
-  if ((hFile = _findfirst (pattern.c_str(), &c_file)) == -1L) {
-    return;
-  }
-
-  do {
-    std::string filepath = (path + std::string(c_file.name));
-    std::string content = readFile(filepath.c_str() );
-    glNamedStringARB(GL_SHADER_INCLUDE_ARB, -1, (std::string("/") + filepath).c_str(), -1, content.c_str()) ;
-  } while(_findnext (hFile, &c_file) != -1L);
-  _findclose (hFile);
-}
-
-
 #endif
 
 void printHelp()
 {
-  printf("glslc\n");
+  printf("glslc v%d\n",GLSLC_VERSION);
   printf("-----\n");
-  printf("(c) 2013 Christoph Kubisch: pixeljetstream@luxinia.de\n");
-  printf("http://github.com/CrazyButcher/glslc\n");
+  printf("(c) 2013-2014 Christoph Kubisch: pixeljetstream@luxinia.de\n");
+  printf("http://glslc.luxinia.de\n");
   printf("\n");
   printf("Basic offline compiler for GLSL\n");
   printf("Creates a dummy window and evokes the GL driver for compiling.\n");
   printf("Can dump pseudo assembly files for NVIDIA\n");
+  printf("Basic #include handling independent of GL_ARB_shading_language_include\n");
   printf("\n");
   printf("Usage:\n");
   printf("\n");
@@ -414,32 +394,144 @@ void printHelp()
   printf("  -DMACRO[=VALUE]\n");
   printf("       prepends '#define MACRO VALUE' to shader\n");
   printf("       If VALUE is not specified it defaults to 1.\n");
-  printf("  -IPATTERN\n");
-  printf("       uses PATTERN to find files for includes\n");
-  printf("       requires GL_ARB_shading_language_include\n");
   printf("  -glslversion \"version string\"\n");
   printf("       prepends version string prior defines, puts // in front of #version directives in shader file\n");
   printf("\n");
 }
 
-void removeVersion(std::string &shader)
-{
-  std::tr1::regex pattern("#version");
 
-  shader = std::tr1::regex_replace( shader, pattern, std::string("//#version"));
+// manual include derived of Christoph Riccio's g_truc OpenGL SamplePack
+// http://ogl-samples.g-truc.net/
+
+std::string parseInclude(std::string const & Line, std::size_t const & Offset)
+{
+  std::string Result;
+
+  std::string::size_type IncludeFirstQuote = Line.find("\"", Offset);
+  std::string::size_type IncludeSecondQuote = Line.find("\"", IncludeFirstQuote + 1);
+
+  return Line.substr(IncludeFirstQuote + 1, IncludeSecondQuote - IncludeFirstQuote - 1);
+}
+
+std::vector<std::string>  includeMarkers;
+
+#define SSTR( x ) dynamic_cast< std::ostringstream & >( \
+                  ( std::ostringstream() << std::dec << (x) ) ).str()
+
+inline std::string includeMarker(const std::string & filename)
+{
+  std::string fixedname;
+#ifdef _WIN32
+  for (size_t i = 0; i < filename.size(); i++){
+    char c = filename[i];
+    if ( c == '\\'){
+      fixedname.append("/");
+    }
+    else{
+      fixedname.append(1,c);
+    }
+  }
+#else
+  fixedname = filename;
+#endif
+  if (!SUPPORTS_SHADERINCLUDE){
+    // #line lineNumber markerNumber
+
+    includeMarkers.push_back(fixedname);
+    int slot = int( includeMarkers.size() );
+    std::string slotstr = SSTR(slot);
+    return slotstr;
+  }
+  else{
+    return std::string(" \"") + fixedname + std::string("\" ");
+  }
+}
+
+std::string manualInclude ( std::string const & filename,
+                            std::string const & prepend,
+                            std::string const & forcedVersion)
+{
+  std::string source = readFile(filename.c_str());
+  if (source.empty())
+    return source;
+
+  std::stringstream stream;
+  stream << source;
+  std::string Line, Text;
+
+  // Handle command line defines
+  Text += prepend;
+  Text += std::string("#line 1 ") + includeMarker(filename) + std::string("\n");
+  int lineCount  = 0;
+  while(std::getline(stream, Line))
+  {
+    std::size_t Offset = 0;
+    lineCount++;
+
+    // Version
+    Offset = Line.find("#version");
+    if(Offset != std::string::npos)
+    {
+      std::size_t CommentOffset = Line.find("//");
+      if(CommentOffset != std::string::npos && CommentOffset < Offset)
+        continue;
+
+      // Reorder so that the #version line is always the first of a shader text
+      Text = (forcedVersion.empty() ? Line : forcedVersion) + std::string("\n") + Text + std::string("//") + Line + std::string("\n");
+      continue;
+    }
+
+    // Include
+    Offset = Line.find("#include");
+    if(Offset != std::string::npos)
+    {
+      std::size_t CommentOffset = Line.find("//");
+      if(CommentOffset != std::string::npos && CommentOffset < Offset)
+        continue;
+
+      std::string includeFile   = parseInclude(Line, Offset);
+      std::string includeSource = manualInclude(includeFile,std::string(),std::string());
+      if(!includeSource.empty())
+      {
+        Text += includeSource;
+        Text += std::string("\n#line ") + SSTR(lineCount + 1) + std::string(" ") + includeMarker(filename) + std::string("\n");
+      }
+
+      continue;
+    }
+
+    Text += Line + "\n";
+  }
+
+  return Text;
 }
 
 void printCorrectedLog(const std::string &log, const char *filename)
 {
   std::string output = log;
 
-  // (0) :
-  std::tr1::regex patternFile("^\\(0\\)");
-  output = std::tr1::regex_replace( output, patternFile, std::string("$1") + std::string(filename) );
+  if (!SUPPORTS_SHADERINCLUDE){
+    // (0) :
+    std::tr1::regex patternFile("^\\(0\\)");
+    output = std::tr1::regex_replace( output, patternFile, std::string(filename) );
 
-  // 0(572) : 
-  std::tr1::regex patternLine("^0(\\(\\d+\\) : )");
-  output = std::tr1::regex_replace( output, patternLine, std::string(filename) + std::string("$1") );
+    // 0(572) : 
+    std::tr1::regex patternLine("^0(\\(\\d+\\) : )");
+    output = std::tr1::regex_replace( output, patternLine, std::string(filename) + std::string("$1") );
+
+    for (size_t i = 0; i < includeMarkers.size(); i++){
+      std::string curfile = includeMarkers[i];
+      int slot = int(i+1);
+
+      // (0) :
+      std::tr1::regex patternFile(std::string("^\\(") + SSTR(slot) + std::string("\\)"));
+      output = std::tr1::regex_replace( output, patternFile, std::string(curfile) );
+
+      // 0(572) : 
+      std::tr1::regex patternLine(std::string("^") + SSTR(slot) + std::string("(\\(\\d+\\) : )"));
+      output = std::tr1::regex_replace( output, patternLine, std::string(curfile) + std::string("$1") );
+    }
+  }
 
   printf(output.c_str());
 }
@@ -496,8 +588,8 @@ int main(int argc, char **argv)
 
   const char* outfilename   = NULL;
   const char* versionstring = NULL;
-  std::string version("");
-  std::string alldefines("");
+  std::string version;
+  std::string alldefines;
   std::vector<ShaderInfo>   shaders;
   std::vector<std::string>  defines;
   std::vector<std::string>  includes;
@@ -607,7 +699,7 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  printf("glslc\n");
+  printf("glslc v%d\n",GLSLC_VERSION);
   printf("GL Vendor:   %s\n",glGetString(GL_VENDOR));
   printf("GL Renderer: %s\n",glGetString(GL_RENDERER));
   printf("GL Version:  %s\n",glGetString(GL_VERSION));
@@ -627,20 +719,12 @@ int main(int argc, char **argv)
   if (useOutfile){
     glProgramParameteri(program,GL_PROGRAM_BINARY_RETRIEVABLE_HINT,GL_TRUE);
   } 
-  
-  if (!SUPPORTS_SHADERINCLUDE && includes.size()){
-    printf("GL_ARB_shading_language_include is not supported, includes will be ignored\n");
-  }
-  else if (includes.size()){
-    for (size_t i = 0; i < includes.size(); i++){
-      addIncludes(includes[i]);
-    }
+
+  if (versionstring){
+    version = std::string("#version ") + std::string(versionstring);
   }
 
   printf("\n");
-  if (versionstring){
-    version = std::string("#version ") + std::string(versionstring) + std::string("\n");
-  }
   for (size_t i = 0; i < defines.size(); i++){
     printf(defines[i].c_str());
     alldefines += defines[i];
@@ -649,7 +733,8 @@ int main(int argc, char **argv)
   for (size_t i = 0; i < shaders.size(); i++){
     const ShaderInfo& info = shaders[i];
     const char* filename   = info.infile.c_str();
-    std::string shadertext = readFile(filename);
+
+    std::string shadertext = manualInclude(filename,alldefines,version);
 
     GLuint shader = glCreateShader(info.type);
     printf("compiling %s:\"%s\"...\n",shaderTypeName(info.type),filename);
@@ -657,24 +742,11 @@ int main(int argc, char **argv)
     const char*  strings[1];
     GLint        lengths[1];
 
-    if (versionstring){
-      removeVersion(shadertext);
-    }
-
-    shadertext = version + alldefines  + std::string("#line 0\n") + shadertext;
-
     strings[0] = shadertext.c_str();
     lengths[0] = (GLint)strlen(strings[0]);
 
     glShaderSource(shader,1,strings,lengths);
-
-    if (SUPPORTS_SHADERINCLUDE){
-      const char* paths = "/";
-      glCompileShaderIncludeARB(shader,1,&paths,NULL);
-    }
-    else{
-      glCompileShader(shader);
-    }
+    glCompileShader(shader);
 
     GLint status = 0;
     GLint logLength = 0;
