@@ -53,4 +53,9 @@ or
   
 > Prepends '#define MACRO VALUE' to shader. If VALUE is not specified it defaults to 1.
 
+Building
+--------
 
+Currently Windows and Linux are supported. For Visual Studio 2008 a solution exists in /buildvc9. The project is just the src/glsl.cpp compiled as console application.
+
+Thanks to Alan Chambers for Linux support.

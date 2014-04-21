@@ -28,7 +28,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
-#define GLSLC_VERSION 5
+#define GLSLC_VERSION 6
 
 #include <cstdio>
 #include <cstring>
@@ -56,7 +56,12 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 typedef char GLchar;
 
-#include <GL/GL.h>
+#include <GL/gl.h>
+
+#ifdef __linux__
+#define GLX_GLXEXT_PROTOTYPES
+#include <GL/glx.h>
+#endif
 
 enum MGLERROR {
   MGL_NO_ERROR                       = GL_NO_ERROR,
@@ -99,7 +104,9 @@ typedef GLuint (APIENTRYP PFNGLCREATESHADERPROC) (GLenum type);
 
 typedef void (APIENTRYP PFNGLLINKPROGRAMPROC) (GLuint program);
 typedef void (APIENTRYP PFNGLCOMPILESHADERPROC) (GLuint shader);
+#if defined(_WIN32)
 typedef void (APIENTRYP PFNGLSHADERSOURCEPROC) (GLuint shader, GLsizei count, const GLchar* const *string, const GLint *length);
+#endif
 typedef void (APIENTRYP PFNGLATTACHSHADERPROC) (GLuint program, GLuint shader);
 
 typedef void (APIENTRYP PFNGLGETPROGRAMIVPROC) (GLuint program, GLenum pname, GLint *params);
@@ -221,30 +228,48 @@ void glNamedStringARB(GLenum type,GLint namelen,const GLchar* name,GLint stringl
   PFNGLNAMEDSTRINGARBPROCvar(type,namelen,name,stringlen,string);
 }
 
+#ifdef _WIN32
+#define INIT_GL_FUNC( type, name )   type##var = (type) wglGetProcAddress(name);  if (! type##var) notfound = true;
+#elif __linux__
+#define INIT_GL_FUNC( type, name )   type##var = (type) glXGetProcAddressARB((const GLubyte *)name);  if (! type##var) notfound = true;
+#endif
 
+bool initGL()
+{
+  bool notfound = false;
 
-std::string readFile(const char* filename){
-  std::string content;
+  SUPPORTS_SEPARATESHADERS = strstr((const char*)glGetString(GL_EXTENSIONS),"GL_ARB_separate_shader_objects") != NULL;
+  SUPPORTS_SHADERINCLUDE = strstr((const char*)glGetString(GL_EXTENSIONS),"GL_ARB_shading_language_include") != NULL;
 
-  size_t filesize;
-  FILE* infile = fopen(filename,"rb");
+  INIT_GL_FUNC(PFNGLGETPROGRAMBINARYPROC,"glGetProgramBinary");
+  INIT_GL_FUNC(PFNGLPROGRAMPARAMETERIPROC,"glProgramParameteri");
 
-  if (!infile){
-    fprintf(stderr,"error: could not open input file \"%s\"\n",filename);
-    exit(1);
-  }
+  INIT_GL_FUNC(PFNGLCOMPILESHADERINCLUDEARBPROC,"glCompileShaderIncludeARB");
+  INIT_GL_FUNC(PFNGLDELETENAMEDSTRINGARBPROC,"glDeleteNamedStringARB");
+  INIT_GL_FUNC(PFNGLGETNAMEDSTRINGARBPROC,"glGetNamedStringARB");
+  INIT_GL_FUNC(PFNGLGETNAMEDSTRINGIVARBPROC,"glGetNamedStringivARB");
+  INIT_GL_FUNC(PFNGLISNAMEDSTRINGARBPROC,"glIsNamedStringARB");
+  INIT_GL_FUNC(PFNGLNAMEDSTRINGARBPROC,"glNamedStringARB");
 
-  fseek (infile, 0, SEEK_END);   // non-portable
-  filesize=ftell (infile);
-  fseek (infile, 0, SEEK_SET);
+  // mandatory
+  notfound = false;
 
-  content.resize(filesize);
-  fread(&content[0],filesize,1,infile);
-  //content[filesize] = 0;
+  INIT_GL_FUNC(PFNGLCREATEPROGRAMPROC,"glCreateProgram");
+  INIT_GL_FUNC(PFNGLCREATESHADERPROC,"glCreateShader");
 
-  fclose (infile);
+  INIT_GL_FUNC(PFNGLLINKPROGRAMPROC,"glLinkProgram");
+  INIT_GL_FUNC(PFNGLSHADERSOURCEPROC,"glShaderSource");
+  INIT_GL_FUNC(PFNGLCOMPILESHADERPROC,"glCompileShader");
+  INIT_GL_FUNC(PFNGLATTACHSHADERPROC,"glAttachShader");
 
-  return content;
+  INIT_GL_FUNC(PFNGLGETPROGRAMIVPROC,"glGetProgramiv");
+  INIT_GL_FUNC(PFNGLGETSHADERIVPROC,"glGetShaderiv");
+  INIT_GL_FUNC(PFNGLGETPROGRAMINFOLOGPROC,"glGetProgramInfoLog");
+  INIT_GL_FUNC(PFNGLGETSHADERINFOLOGPROC,"glGetShaderInfoLog");
+
+  MGLERROR error = (MGLERROR)glGetError();
+
+  return error == MGL_NO_ERROR && !notfound;
 }
 
 #ifdef _WIN32
@@ -277,7 +302,6 @@ bool createContext()
 {
   // based on "Pez" by Philip Rideout
   // http://prideout.net/blog/p36/pez.windows.c
-
 
   LPCSTR szName = "nvglcc";
   WNDCLASSEXA wc = { sizeof(WNDCLASSEX), CS_CLASSDC, MsgProc, 0L, 0L, GetModuleHandle(0), 0, 0, 0, 0, szName, 0 };
@@ -321,48 +345,96 @@ bool createContext()
   SetPixelFormat(hDC, pixelFormat, &pfd);
   hRC = wglCreateContext(hDC);
   wglMakeCurrent(hDC, hRC);
-
-  bool notfound = false;
-
-#define INIT_GL_FUNC( type, name )   type##var = (type) wglGetProcAddress(name);  if (! type##var) notfound = true;
-
-  // optional
-  SUPPORTS_SEPARATESHADERS = strstr((const char*)glGetString(GL_EXTENSIONS),"GL_ARB_separate_shader_objects") != NULL;
-  SUPPORTS_SHADERINCLUDE = strstr((const char*)glGetString(GL_EXTENSIONS),"GL_ARB_shading_language_include") != NULL;
-
-  INIT_GL_FUNC(PFNGLGETPROGRAMBINARYPROC,"glGetProgramBinary");
-  INIT_GL_FUNC(PFNGLPROGRAMPARAMETERIPROC,"glProgramParameteri");
-
-  INIT_GL_FUNC(PFNGLCOMPILESHADERINCLUDEARBPROC,"glCompileShaderIncludeARB");
-  INIT_GL_FUNC(PFNGLDELETENAMEDSTRINGARBPROC,"glDeleteNamedStringARB");
-  INIT_GL_FUNC(PFNGLGETNAMEDSTRINGARBPROC,"glGetNamedStringARB");
-  INIT_GL_FUNC(PFNGLGETNAMEDSTRINGIVARBPROC,"glGetNamedStringivARB");
-  INIT_GL_FUNC(PFNGLISNAMEDSTRINGARBPROC,"glIsNamedStringARB");
-  INIT_GL_FUNC(PFNGLNAMEDSTRINGARBPROC,"glNamedStringARB");
-
-  // mandatory
-  notfound = false;
-
-  INIT_GL_FUNC(PFNGLCREATEPROGRAMPROC,"glCreateProgram");
-  INIT_GL_FUNC(PFNGLCREATESHADERPROC,"glCreateShader");
-
-  INIT_GL_FUNC(PFNGLLINKPROGRAMPROC,"glLinkProgram");
-  INIT_GL_FUNC(PFNGLSHADERSOURCEPROC,"glShaderSource");
-  INIT_GL_FUNC(PFNGLCOMPILESHADERPROC,"glCompileShader");
-  INIT_GL_FUNC(PFNGLATTACHSHADERPROC,"glAttachShader");
-
-  INIT_GL_FUNC(PFNGLGETPROGRAMIVPROC,"glGetProgramiv");
-  INIT_GL_FUNC(PFNGLGETSHADERIVPROC,"glGetShaderiv");
-  INIT_GL_FUNC(PFNGLGETPROGRAMINFOLOGPROC,"glGetProgramInfoLog");
-  INIT_GL_FUNC(PFNGLGETSHADERINFOLOGPROC,"glGetShaderInfoLog");
-
-  MGLERROR error = (MGLERROR)glGetError();
-
-  return error != MGL_NO_ERROR || notfound;
+  
+  return true;
 }
 
+#elif __linux__
+
+static int const bufferAttributes[] =
+{
+  GLX_DOUBLEBUFFER, False,
+  GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
+  GLX_BIND_TO_TEXTURE_RGB_EXT, True,
+  None
+};
+
+static int const pixmapAttributes[] =
+{
+  GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGB_EXT,
+  GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
+  None
+};
+
+static int const contextAttributes[] =
+{
+  GLX_RENDER_TYPE, GLX_RGBA_TYPE,
+#ifndef NDEBUG
+  GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_DEBUG_BIT_ARB,
+#endif
+  None
+};
+
+bool createContext()
+{
+  Display *const pDisplay = XOpenDisplay(NULL);
+  if (NULL == pDisplay)
+  {
+    printf( "Unable to open a connection to the X server\n" );
+    return false;
+  }
+    
+  // Request a frame-buffer config.
+  int numFbConfigs;
+  GLXFBConfig *const pFbConfigs = glXChooseFBConfig(
+    pDisplay,
+    DefaultScreen(pDisplay),
+    bufferAttributes,
+    &numFbConfigs);
+
+  // Create a new GL context.
+  GLXContext glContext = glXCreateContextAttribsARB(
+    pDisplay,
+    pFbConfigs[0],
+    NULL,
+    True,
+    contextAttributes);
+
+  // Create a pixmap.
+  Pixmap xPixmap = XCreatePixmap(pDisplay, DefaultRootWindow(pDisplay), 128, 128, 24);
+  GLXPixmap glPixmap = glXCreatePixmap(pDisplay, pFbConfigs[0], xPixmap, pixmapAttributes);
+
+  // Make the context active.
+  glXMakeCurrent(pDisplay, glPixmap, glContext);
+  
+  return true;
+}
 
 #endif
+
+std::string readFile(const char* filename){
+  std::string content;
+
+  size_t filesize;
+  FILE* infile = fopen(filename,"rb");
+
+  if (!infile){
+    fprintf(stderr,"error: could not open input file \"%s\"\n",filename);
+    exit(1);
+  }
+
+  fseek (infile, 0, SEEK_END);   // non-portable
+  filesize=ftell (infile);
+  fseek (infile, 0, SEEK_SET);
+
+  content.resize(filesize);
+  fread(&content[0],filesize,1,infile);
+  //content[filesize] = 0;
+
+  fclose (infile);
+
+  return content;
+}
 
 void printHelp()
 {
@@ -509,7 +581,7 @@ std::string manualInclude ( std::string const & filename,
 void printCorrectedLog(const std::string &log, const char *filename)
 {
   std::string output = log;
-
+#ifndef __linux__
   if (!SUPPORTS_SHADERINCLUDE){
     // (0) :
     std::tr1::regex patternFile("^\\(0\\)");
@@ -532,8 +604,8 @@ void printCorrectedLog(const std::string &log, const char *filename)
       output = std::tr1::regex_replace( output, patternLine, std::string(curfile) + std::string("$1") );
     }
   }
-
-  printf(output.c_str());
+#endif
+  printf("%s", output.c_str());
 }
 
 
@@ -694,16 +766,20 @@ int main(int argc, char **argv)
     return 1;
   }
   
-  if (createContext()){
+  if (!createContext()){
     fprintf(stderr,"could not create GL context\n");
+    return 1;
+  }
+  
+  if (!initGL()) {
+    fprintf(stderr,"could not initialize GL functions\n");
     return 1;
   }
 
   printf("glslc v%d\n",GLSLC_VERSION);
-  printf("GL Vendor:   %s\n",glGetString(GL_VENDOR));
-  printf("GL Renderer: %s\n",glGetString(GL_RENDERER));
-  printf("GL Version:  %s\n",glGetString(GL_VERSION));
-
+  printf("GL Vendor:   %s\n", (const char*)glGetString(GL_VENDOR));
+  printf("GL Renderer: %s\n", (const char*)glGetString(GL_RENDERER));
+  printf("GL Version:  %s\n", (const char*)glGetString(GL_VERSION));
 
   if (useSeparate && !SUPPORTS_SEPARATESHADERS) {
     printf("separable option not supported, disabled\n");
@@ -726,7 +802,7 @@ int main(int argc, char **argv)
 
   printf("\n");
   for (size_t i = 0; i < defines.size(); i++){
-    printf(defines[i].c_str());
+    printf("%s",defines[i].c_str());
     alldefines += defines[i];
   }
 
@@ -784,7 +860,7 @@ int main(int argc, char **argv)
       size_t infobegin = findShaderInLog(log,0,type);
       size_t infoend   = NPOS;
       if (infobegin != NPOS){
-        printf(log.substr(0,infobegin).c_str());
+        printf("%s",log.substr(0,infobegin).c_str());
         while (infobegin != NPOS){
           GLenum typenext;
           infoend = findShaderInLog(log,infobegin+1,typenext);
@@ -803,7 +879,7 @@ int main(int argc, char **argv)
 
       }
       else{
-        printf(log.c_str());
+        printf("%s",log.c_str());
       }
       
       printf("\n");
@@ -843,7 +919,7 @@ int main(int argc, char **argv)
       }
 
       std::string shaderoutput = binary.substr(startpos,endpos + 3 - startpos);
-      fprintf(outfile,shaderoutput.c_str());
+      fprintf(outfile,"%s",shaderoutput.c_str());
       fprintf(outfile,"\n\n");
 
       startpos = binary.find("!!NV", endpos + 3);
@@ -855,5 +931,3 @@ int main(int argc, char **argv)
 
   return 0;
 }
-
-
