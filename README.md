@@ -19,6 +19,8 @@ glslc -o output.txt -profile vertex myvertex.vs
 
 glslc -glslversion "430 core" -o output.txt -DFOO -vertex myvertex.vs -fragment myfrag.fs
 
+glslc -glslversion "430 core" -o output.txt -DFOO -SD_VERTEX_ -vertex myprogram.glsl -SD_FRAGMENT_ -fragment myprogram.glsl
+
 Usage
 -----
 
@@ -51,7 +53,11 @@ or
 
 -DMACRO[=VALUE]
   
-> Prepends '#define MACRO VALUE' to shader. If VALUE is not specified it defaults to 1.
+> Prepends '#define MACRO VALUE' to all shaders. If VALUE is not specified it defaults to 1.
+
+-SDMACRO[=VALUE]
+  
+> Prepends '#define MACRO VALUE' to next shader. If VALUE is not specified it defaults to 1. All shader defines are cleared with each shader file.
 
 Building
 --------

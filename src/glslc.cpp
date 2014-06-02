@@ -28,7 +28,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
-#define GLSLC_VERSION 6
+#define GLSLC_VERSION 7
 
 #include <cstdio>
 #include <cstring>
@@ -464,7 +464,10 @@ void printHelp()
   printf("  -o outputfilename\n");
   printf("       NVIDIA drivers can output pseudo assembly based on NV_program\n");
   printf("  -DMACRO[=VALUE]\n");
-  printf("       prepends '#define MACRO VALUE' to shader\n");
+  printf("       prepends '#define MACRO VALUE' to all shaders\n");
+  printf("       If VALUE is not specified it defaults to 1.\n");
+  printf("  -SDMACRO[=VALUE]\n");
+  printf("       prepends '#define MACRO VALUE' only to next shader\n");
   printf("       If VALUE is not specified it defaults to 1.\n");
   printf("  -glslversion \"version string\"\n");
   printf("       prepends version string prior defines, puts // in front of #version directives in shader file\n");
@@ -651,6 +654,7 @@ size_t findShaderInLog(const std::string& log, size_t offset, GLenum& type)
 struct ShaderInfo {
   GLenum        type;
   std::string   infile;
+  std::vector<std::string>  defines;
 };
 
 int main(int argc, char **argv)
@@ -664,6 +668,7 @@ int main(int argc, char **argv)
   std::string alldefines;
   std::vector<ShaderInfo>   shaders;
   std::vector<std::string>  defines;
+  std::vector<std::string>  shaderdefines;
   std::vector<std::string>  includes;
   
   {
@@ -728,6 +733,17 @@ int main(int argc, char **argv)
 
         defines.push_back(std::string("#define ") + def + "\n");
       }
+      else if (strstr(argv[i],"-SD") == argv[i]){
+        std::string def(argv[i]+3);
+        if (def.find('=') != NPOS){
+          def[def.find('=')] = ' ';
+        }
+        else {
+          def += std::string(" 1");
+        }
+
+        shaderdefines.push_back(std::string("#define ") + def + "\n");
+      }
       else if (strstr(argv[i],"-I") == argv[i]){
         std::string pattern(argv[i]+2);
         includes.push_back(pattern);
@@ -750,7 +766,9 @@ int main(int argc, char **argv)
         ShaderInfo info;
         info.infile  = std::string(filename);
         info.type    = shadertype;
+        info.defines = shaderdefines;
         shaders.push_back(info);
+        shaderdefines.clear();
       }
     }
   }
@@ -801,16 +819,30 @@ int main(int argc, char **argv)
   }
 
   printf("\n");
-  for (size_t i = 0; i < defines.size(); i++){
-    printf("%s",defines[i].c_str());
-    alldefines += defines[i];
+  if (defines.size()){
+    printf("Global defines\n");
+    for (size_t i = 0; i < defines.size(); i++){
+      printf("%s",defines[i].c_str());
+      alldefines += defines[i];
+    }
+    printf("\n");
   }
+  
 
   for (size_t i = 0; i < shaders.size(); i++){
     const ShaderInfo& info = shaders[i];
     const char* filename   = info.infile.c_str();
 
-    std::string shadertext = manualInclude(filename,alldefines,version);
+    std::string currentdefines;
+    if (info.defines.size()){
+      printf("Shader defines\n");
+      for (size_t i = 0; i < info.defines.size(); i++){
+        printf("%s",info.defines[i].c_str());
+        currentdefines += info.defines[i];
+      }
+    }
+
+    std::string shadertext = manualInclude(filename,alldefines + currentdefines,version);
 
     GLuint shader = glCreateShader(info.type);
     printf("compiling %s:\"%s\"...\n",shaderTypeName(info.type),filename);
