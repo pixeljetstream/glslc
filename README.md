@@ -10,7 +10,9 @@ http://glslc.luxinia.de
 * Creates an invisible dummy window and evokes the GL driver for compiling.
 * Can dump pseudo assembly files for NVIDIA
 * Basic #include handling independent of GL_ARB_shading_language_include support
-* Best used with GLSL editing capabilites of the http://www.luxinia.de/index.php/Estrela or http://studio.zerobrane.com/ IDE
+* Best used with GLSL editing capabilites of the https://github.com/pkulchenko/ZeroBraneStudio/ IDE (make sure to activate the estrela configuration and set GLSLC_BIN_PATH environment variable to where the glslc.exe is located)
+
+![glslc inside zbstudio](http://www.luxinia.de/images/estrela_glslc.png)
 
 Examples
 --------
