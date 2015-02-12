@@ -28,7 +28,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
-#define GLSLC_VERSION 7
+#define GLSLC_VERSION 8
 
 #include <cstdio>
 #include <cstring>
@@ -927,6 +927,12 @@ int main(int argc, char **argv)
     GLsizei binaryLength = 0;
     GLenum format = 0;
     glGetProgramiv(program, GL_PROGRAM_BINARY_LENGTH,&binaryLength);
+
+    if (!binaryLength){
+      fprintf(stderr,"error: could not retrieve program binary\n");
+      return 1;
+    }
+
     std::string binary(size_t(binaryLength+1),0);
     glGetProgramBinary(program,binaryLength,NULL,&format,&binary[0]);
 
