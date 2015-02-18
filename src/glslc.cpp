@@ -28,7 +28,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
-#define GLSLC_VERSION 8
+#define GLSLC_VERSION 9
 
 #include <cstdio>
 #include <cstring>
@@ -866,9 +866,11 @@ int main(int argc, char **argv)
       glGetShaderInfoLog(shader, logLength,NULL,&log[0]);
       printCorrectedLog(log,filename);
       printf("\n");
-      if (!status){
-        return 1;
-      }
+    }
+
+    if (!status){
+      fprintf(stderr,"error: shader could not be compiled\n");
+      return 1;
     }
 
     printf("success\n\n");
@@ -915,9 +917,11 @@ int main(int argc, char **argv)
       }
       
       printf("\n");
-      if (!status){
-        return 1;
-      }
+    }
+
+    if (!status){
+      fprintf(stderr,"error: program could not be linked\n");
+      return 1;
     }
 
     printf("successfully linked\n");
