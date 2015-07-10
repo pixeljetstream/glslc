@@ -10,7 +10,10 @@ http://glslc.luxinia.de
 * Creates an invisible dummy window and evokes the GL driver for compiling.
 * Can dump pseudo assembly files for NVIDIA
 * Basic #include handling independent of GL_ARB_shading_language_include support
-* Best used with GLSL editing capabilites of the https://github.com/pkulchenko/ZeroBraneStudio/ IDE (at your local ide location create cfg/user.lua file with the same contents of cfg/estrela.lua; set the GLSLC_BIN_PATH environment variable to where your glslc.exe is located; this will make the GLSL top menu available inside zbstudio)
+* Best used with GLSL editing capabilites of the https://github.com/pkulchenko/ZeroBraneStudio/ IDE
+ * At your local ide location create "cfg/user.lua" file with the same contents of "cfg/estrela.lua". Set the GLSLC_BIN_PATH environment variable to where your glslc.exe is located. This will make the GLSL top menu available inside zbstudio.
+ * *'Compile from .ext'* derives the shader profile type from the filename, for example a ".v" within the filename causes the file to be compiled as vertex shader. The tool tests in following order: ".v",".f",".g",".t*c",".t*e",".c".
+ * *'Link multiple .ext'* will try to compile and link multiple shader files that only differ in their file extension.
 
 ![glslc inside zbstudio](http://www.luxinia.de/images/estrela_glslc.png)
 
