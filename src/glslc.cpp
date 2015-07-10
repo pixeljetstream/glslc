@@ -669,8 +669,7 @@ int main(int argc, char **argv)
   std::vector<ShaderInfo>   shaders;
   std::vector<std::string>  defines;
   std::vector<std::string>  shaderdefines;
-  std::vector<std::string>  includes;
-  
+
   {
     GLenum shadertype = 0;
     const char* filename = NULL;
@@ -743,10 +742,6 @@ int main(int argc, char **argv)
         }
 
         shaderdefines.push_back(std::string("#define ") + def + "\n");
-      }
-      else if (strstr(argv[i],"-I") == argv[i]){
-        std::string pattern(argv[i]+2);
-        includes.push_back(pattern);
       }
       else if (strcmp(argv[i],"-glslversion")==0 && i + 1 < argc){
         versionstring = argv[i+1];
