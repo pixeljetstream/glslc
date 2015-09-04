@@ -28,7 +28,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
-#define GLSLC_VERSION 10
+#define GLSLC_VERSION 11
 
 #include <cstdio>
 #include <cstring>
@@ -36,6 +36,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <vector>
 #include <regex>
 #include <sstream>
+#include <fstream>
 
 #if defined(_WIN32) && !defined(APIENTRY) && !defined(__CYGWIN__) && !defined(__SCITECH_SNAP__)
 #define WIN32_LEAN_AND_MEAN 1
@@ -412,27 +413,26 @@ bool createContext()
 
 #endif
 
-std::string readFile(const char* filename){
-  std::string content;
+std::string readFile( const char* filename)
+{
+  std::string result;
 
-  size_t filesize;
-  FILE* infile = fopen(filename,"rt");
-
-  if (!infile){
+  std::ifstream stream(filename, std::ios::in);
+  if(!stream.is_open()){
     fprintf(stderr,"error: could not open input file \"%s\"\n",filename);
     exit(1);
+    return result;
   }
 
-  fseek (infile, 0, SEEK_END);   // non-portable
-  filesize=ftell (infile);
-  fseek (infile, 0, SEEK_SET);
+  stream.seekg(0, std::ios::end);
+  result.reserve(stream.tellg());
+  stream.seekg(0, std::ios::beg);
 
-  content.resize(filesize);
-  fread(&content[0],filesize,1,infile);
-  //content[filesize] = 0;
+  result.assign(
+    (std::istreambuf_iterator<char>(stream)),
+    std::istreambuf_iterator<char>());
 
-  fclose (infile);
-  return content;
+  return result;
 }
 
 void printHelp()
@@ -574,7 +574,7 @@ std::string manualInclude ( std::string const & filename,
       if(!includeSource.empty())
       {
         // strip null terminator from content
-        Text += std::string(includeSource.c_str());
+        Text += includeSource;
         Text += eol + std::string("#line ") + SSTR(lineCount + 1) + std::string(" ") + includeMarker(filename) + eol;
       }
 
