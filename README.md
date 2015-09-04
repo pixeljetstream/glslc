@@ -3,7 +3,7 @@ glslc
 
 Simple GLSL compilation checker (uses display driver)
 
-(c) 2013-2014 Christoph Kubisch: pixeljetstream@luxinia.de
+(c) 2013-2015 Christoph Kubisch: pixeljetstream@luxinia.de
 http://glslc.luxinia.de
 
 * Basic commandline compiler for GLSL
