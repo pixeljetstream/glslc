@@ -28,7 +28,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
-#define GLSLC_VERSION 9
+#define GLSLC_VERSION 10
 
 #include <cstdio>
 #include <cstring>
@@ -146,7 +146,7 @@ PFNGLISNAMEDSTRINGARBPROC PFNGLISNAMEDSTRINGARBPROCvar;
 PFNGLNAMEDSTRINGARBPROC PFNGLNAMEDSTRINGARBPROCvar;
 
 int SUPPORTS_SEPARATESHADERS = 0;
-int SUPPORTS_SHADERINCLUDE = 0;
+int SUPPORTS_SHADERINCLUDE   = 1;
 
 void glGetProgramBinary(GLuint program, GLsizei bufSize, GLsizei *length, GLenum *binaryFormat, GLvoid *binary){
   PFNGLGETPROGRAMBINARYPROCvar(program,bufSize,length,binaryFormat,binary);
@@ -416,7 +416,7 @@ std::string readFile(const char* filename){
   std::string content;
 
   size_t filesize;
-  FILE* infile = fopen(filename,"rb");
+  FILE* infile = fopen(filename,"rt");
 
   if (!infile){
     fprintf(stderr,"error: could not open input file \"%s\"\n",filename);
@@ -432,7 +432,6 @@ std::string readFile(const char* filename){
   //content[filesize] = 0;
 
   fclose (infile);
-
   return content;
 }
 
@@ -459,6 +458,10 @@ void printHelp()
   printf("       and affects subsequent filenames.\n");
   printf("       all files will be linked to a single program\n");
   printf("Other:\n");
+  printf("  -E\n");
+  printf("       pre-processes all shaders only. Dumps to stdout unless -P option is used\n");
+  printf("  -P filename\n");
+  printf("       Stores pre-processed file for next defined shader\n");
   printf("  -separable\n");
   printf("       enables separate shader objects usage (default false)\n");
   printf("  -o outputfilename\n");
@@ -489,6 +492,8 @@ std::string parseInclude(std::string const & Line, std::size_t const & Offset)
 }
 
 std::vector<std::string>  includeMarkers;
+
+std::string eol("\n");
 
 #define SSTR( x ) dynamic_cast< std::ostringstream & >( \
                   ( std::ostringstream() << std::dec << (x) ) ).str()
@@ -536,7 +541,7 @@ std::string manualInclude ( std::string const & filename,
 
   // Handle command line defines
   Text += prepend;
-  Text += std::string("#line 1 ") + includeMarker(filename) + std::string("\n");
+  Text += std::string("#line 1 ") + includeMarker(filename) + eol;
   int lineCount  = 0;
   while(std::getline(stream, Line))
   {
@@ -552,7 +557,7 @@ std::string manualInclude ( std::string const & filename,
         continue;
 
       // Reorder so that the #version line is always the first of a shader text
-      Text = (forcedVersion.empty() ? Line : forcedVersion) + std::string("\n") + Text + std::string("//") + Line + std::string("\n");
+      Text = (forcedVersion.empty() ? Line : forcedVersion) + eol + Text + std::string("//") + Line + eol;
       continue;
     }
 
@@ -568,14 +573,15 @@ std::string manualInclude ( std::string const & filename,
       std::string includeSource = manualInclude(includeFile,std::string(),std::string());
       if(!includeSource.empty())
       {
-        Text += includeSource;
-        Text += std::string("\n#line ") + SSTR(lineCount + 1) + std::string(" ") + includeMarker(filename) + std::string("\n");
+        // strip null terminator from content
+        Text += std::string(includeSource.c_str());
+        Text += eol + std::string("#line ") + SSTR(lineCount + 1) + std::string(" ") + includeMarker(filename) + eol;
       }
 
       continue;
     }
 
-    Text += Line + "\n";
+    Text += Line + eol;
   }
 
   return Text;
@@ -654,14 +660,17 @@ size_t findShaderInLog(const std::string& log, size_t offset, GLenum& type)
 struct ShaderInfo {
   GLenum        type;
   std::string   infile;
+  std::string   preprocessfile;
   std::vector<std::string>  defines;
 };
 
 int main(int argc, char **argv)
 {
-  bool useSeparate = false;
-  bool useOutfile  = false;
+  bool  useSeparate = false;
+  bool  useOutfile  = false;
+  bool  usePreprocessonly = false;
 
+  const char* preprocessfilename = NULL;
   const char* outfilename   = NULL;
   const char* versionstring = NULL;
   std::string version;
@@ -730,7 +739,7 @@ int main(int argc, char **argv)
           def += std::string(" 1");
         }
 
-        defines.push_back(std::string("#define ") + def + "\n");
+        defines.push_back(std::string("#define ") + def + eol);
       }
       else if (strstr(argv[i],"-SD") == argv[i]){
         std::string def(argv[i]+3);
@@ -741,7 +750,7 @@ int main(int argc, char **argv)
           def += std::string(" 1");
         }
 
-        shaderdefines.push_back(std::string("#define ") + def + "\n");
+        shaderdefines.push_back(std::string("#define ") + def + eol);
       }
       else if (strcmp(argv[i],"-glslversion")==0 && i + 1 < argc){
         versionstring = argv[i+1];
@@ -749,6 +758,13 @@ int main(int argc, char **argv)
       }
       else if (strcmp(argv[i],"-o")==0 && i + 1 < argc){
         outfilename = argv[i+1];
+        i++;
+      }
+      else if (strcmp(argv[i],"-E")==0){
+        usePreprocessonly = true;
+      }
+      else if (strcmp(argv[i],"-P")==0 && i + 1 < argc){
+        preprocessfilename = argv[i+1];
         i++;
       }
       else {
@@ -760,6 +776,7 @@ int main(int argc, char **argv)
         filename = argv[i];
         ShaderInfo info;
         info.infile  = std::string(filename);
+        info.preprocessfile = preprocessfilename ? std::string(preprocessfilename) : std::string();
         info.type    = shadertype;
         info.defines = shaderdefines;
         shaders.push_back(info);
@@ -779,35 +796,40 @@ int main(int argc, char **argv)
     return 1;
   }
   
-  if (!createContext()){
+  if (!usePreprocessonly && !createContext()){
     fprintf(stderr,"could not create GL context\n");
     return 1;
   }
   
-  if (!initGL()) {
+  if (!usePreprocessonly && !initGL()) {
     fprintf(stderr,"could not initialize GL functions\n");
     return 1;
   }
 
+  
   printf("glslc v%d\n",GLSLC_VERSION);
-  printf("GL Vendor:   %s\n", (const char*)glGetString(GL_VENDOR));
-  printf("GL Renderer: %s\n", (const char*)glGetString(GL_RENDERER));
-  printf("GL Version:  %s\n", (const char*)glGetString(GL_VERSION));
 
-  if (useSeparate && !SUPPORTS_SEPARATESHADERS) {
-    printf("separable option not supported, disabled\n");
-    useSeparate = true;
+  GLuint program;
+  if (!usePreprocessonly){
+    printf("GL Vendor:   %s\n", (const char*)glGetString(GL_VENDOR));
+    printf("GL Renderer: %s\n", (const char*)glGetString(GL_RENDERER));
+    printf("GL Version:  %s\n", (const char*)glGetString(GL_VERSION));
+
+    if (useSeparate && !SUPPORTS_SEPARATESHADERS) {
+      printf("separable option not supported, disabled\n");
+      useSeparate = true;
+    }
+
+    useOutfile = PFNGLGETPROGRAMBINARYPROCvar && outfilename && strstr((const char*)glGetString(GL_VENDOR), "NVIDIA");
+
+    program = glCreateProgram();
+    if (useSeparate) {
+      glProgramParameteri(program,GL_PROGRAM_SEPARABLE,GL_TRUE);
+    }
+    if (useOutfile){
+      glProgramParameteri(program,GL_PROGRAM_BINARY_RETRIEVABLE_HINT,GL_TRUE);
+    } 
   }
-
-  useOutfile = PFNGLGETPROGRAMBINARYPROCvar && outfilename && strstr((const char*)glGetString(GL_VENDOR), "NVIDIA");
-
-  GLuint program = glCreateProgram();
-  if (useSeparate) {
-    glProgramParameteri(program,GL_PROGRAM_SEPARABLE,GL_TRUE);
-  }
-  if (useOutfile){
-    glProgramParameteri(program,GL_PROGRAM_BINARY_RETRIEVABLE_HINT,GL_TRUE);
-  } 
 
   if (versionstring){
     version = std::string("#version ") + std::string(versionstring);
@@ -838,6 +860,26 @@ int main(int argc, char **argv)
     }
 
     std::string shadertext = manualInclude(filename,alldefines + currentdefines,version);
+
+    if (!info.preprocessfile.empty()){
+      FILE* outfile = fopen(info.preprocessfile.c_str(),"wt");
+      if (!outfile){
+        fprintf(stderr,"error: could not create preprocess file, \"%s\"\n",info.preprocessfile.c_str());
+        return 1;
+      }
+      else{
+        printf("pre-processed written to \"%s\"\n",info.preprocessfile.c_str());
+      }
+      fwrite(&shadertext[0],shadertext.size(),1,outfile);
+    }
+    
+    if (usePreprocessonly){
+      if (info.preprocessfile.empty()){
+        printf("pre-processed \"%s\"\n",filename);
+        printf("%s\n\n",shadertext.c_str());
+      }
+      continue;
+    }
 
     GLuint shader = glCreateShader(info.type);
     printf("compiling %s:\"%s\"...\n",shaderTypeName(info.type),filename);
@@ -870,6 +912,10 @@ int main(int argc, char **argv)
 
     printf("success\n\n");
     glAttachShader(program,shader);
+  }
+
+  if (usePreprocessonly){
+    return 0;
   }
 
   glLinkProgram(program);

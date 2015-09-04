@@ -56,6 +56,14 @@ or
 
 > NVIDIA drivers can output pseudo assembly file based on NV_program
 
+-P *preprocessfilename*
+
+> stores the pre-processed file for the next specified shader
+
+-E
+
+> Pre-processes files only, no GL context creation. Outputs to stdout unless -P was specified.
+
 -DMACRO[=VALUE]
   
 > Prepends '#define MACRO VALUE' to all shaders. If VALUE is not specified it defaults to 1.
