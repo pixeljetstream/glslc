@@ -2,7 +2,7 @@
 
 glslc
 =============================================================================
-Copyright: 2013-2014 Christoph Kubisch. 
+Copyright: 2013-2015 Christoph Kubisch. 
 http://glslc.luxinia.de
 
 Permission is hereby granted, free of charge, to any person obtaining
